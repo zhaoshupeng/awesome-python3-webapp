@@ -21,11 +21,14 @@ def index(request):
 	#如果不指定content_type='text/html',用浏览器打开会弹出下载框
 	return web.Response(body=b'<h1>Awesome</h1>', content_type='text/html', charset='UTF-8')
 	
+#注意aiohttp的初始化函数init()也是一个coroutine，loop.create_server()则利用asyncio创建TCP服务	
+# 调用asyncio实现异步IO
 @asyncio.coroutine
 def init(loop):
 	app = web.Application(loop=loop)
+
 	app.router.add_route('GET','/',index)
-	srv = yield from loop.create_server(app.make_handler(),'127.0.0.1',9000)
+	srv = yield from loop.create_server(app.make_handler(),'127.0.0.1',9009)
 	logging.info('server started at http://127.0.0.1:9000...')
 	return srv
 
