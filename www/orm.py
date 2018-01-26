@@ -55,7 +55,7 @@ async def select(sql,args,size=None):
 	log(sql,args)
 	global __pool	
 	# 从连接池中获得一个数据库连接
-    # 用with语句可以封装清理（关闭conn)和处理异常工作
+	# 用with语句可以封装清理（关闭conn)和处理异常工作
 	async with __pool.get() as conn:
 	# with (yield from __pool) as conn:	
 	# 	cur = yield from conn.cursor(aiomysql.DictCursor)
@@ -121,13 +121,13 @@ class Field(object):
 	
 	# 定制输出信息为 类名，列的类型，列名;直接打印实例时用到
 	def __str__(self):
-		return '<%s,%s:%s>' % (self.__class__name__,self.column_type,self.name)
+		return '<%s,%s:%s>' % (self.__class__.__name__,self.column_type,self.name)
 
 
 class StringField(Field):
 	#ddl是数据定义语言("data definition languages")，默认值是'varchar(100)'，意思是可变字符串，长度为100
-    #和char相对应，char是固定长度，字符串长度不够会自动补齐，varchar则是多长就是多长，但最长不能超过规定长度
-	def __init__(self, name=None, primary_key=False, default=None, dd1='varchar(100)'):
+	#和char相对应，char是固定长度，字符串长度不够会自动补齐，varchar则是多长就是多长，但最长不能超过规定长度
+	def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
 		super().__init__(name,ddl,primary_key,default)
 		#基类改为旧式类，即不继承任何基类	
 		#super()采用新式类，要求最顶层的父类一定要继承于object，这样就可以利用super()函数来调用父类的init()等函数
@@ -177,18 +177,30 @@ class ModelMetaclass(type):
 		mappings = dict()
 		fields = []
 		primaryKey = None 
+		# for k, v in attrs.items():
+		# 	if isinstance(v, Field):
+		# 		#找主键
+		# 		# 先判断找到的映射是不是主键
+		# 		if v.primary_key:	# 若主键已存在,又找到一个主键,将报错,每张表有且仅有一个主键
+		# 			raise RuntimeError('Duplicate primary key for field:%s' % k)	
+		# 		primaryKey = k
+		# 	else:
+		# 		fields.append(k)
 		for k, v in attrs.items():
 			if isinstance(v, Field):
-				#找主键
-				# 先判断找到的映射是不是主键
-				if v.primary_key:	# 若主键已存在,又找到一个主键,将报错,每张表有且仅有一个主键
-					raise StandardError('Duplicate primary key for field:%s' % k)	
-				primaryKey = k
-			else:
-				fields.append(k)
+				logging.info('  found mapping: %s ==> %s' % (k, v))
+				mappings[k] = v
+				if v.primary_key:
+					# 找到主键:
+					if primaryKey:
+						raise StandardError('Duplicate primary key for field: %s' % k)
+					primaryKey = k
+				else:
+					fields.append(k)
+
 		# 如果没有找到主键，也会报错		
 		if not primaryKey:
-			raise StandardError('Primary key not found.')	
+			raise RuntimeError('Primary key not found.')	
 		# 定义域中的key值已经添加到fields里了，就要在attrs中删除，避免重名导致运行时错误	
 		for k in mappings.keys():
 			attrs.pop(k)
@@ -199,7 +211,7 @@ class ModelMetaclass(type):
 		attrs['__primary_key__'] = primaryKey 	#主键属性名
 		attrs['__fields__'] = fields 	#除主键之外的属性名
 		# 构造默认的SELECT, INSERT, UPDATE, DELETE语句
-        # 以下都是sql语句
+		# 以下都是sql语句
 		attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
 		attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
 		attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f),fields)), primaryKey)
@@ -245,7 +257,7 @@ class Model(dict, metaclass=ModelMetaclass):
 		value = getattr(self, key, None)
 		if value is None:
 			# self.__mapping__在metaclass中，用于保存不同实例属性在Model基类中的映射关系
-            # field是一个定义域!
+			# field是一个定义域!
 			field = self.__mappings__[key]
 			# 如果field存在default属性，那可以直接使用这个默认值
 			if field.default is not None:
@@ -261,13 +273,13 @@ class Model(dict, metaclass=ModelMetaclass):
 
 
 	@ classmethod  # 这个装饰器是类方法的意思，即可以不创建实例直接调用类方法
-    async def find(cls, pk):
-        '''查找对象的主键'''
-        # select函数之前定义过，这里传入了三个参数分别是之前定义的 sql、args、size
-        rs = await select("%s where `%s`=?" % (cls.__select__, cls.__primary_key__), [pk], 1)
-        if len(rs) == 0:
-            return None
-        return cls(**rs[0])
+	async def find(cls, pk):
+		'''查找对象的主键'''
+		# select函数之前定义过，这里传入了三个参数分别是之前定义的 sql、args、size
+		rs = await select("%s where `%s`=?" % (cls.__select__, cls.__primary_key__), [pk], 1)
+		if len(rs) == 0:
+			return None
+		return cls(**rs[0])
 
     # findAll() - 根据WHERE条件查找
 	@classmethod	# 这个装饰器是类方法的意思，即可以不创建实例直接调用类方法
@@ -300,39 +312,39 @@ class Model(dict, metaclass=ModelMetaclass):
 		return [cls(**r) for r in rs]								
 
 	# findNumber() - 根据WHERE条件查找，但返回的是整数，适用于select count(*)类型的SQL。
-    @classmethod
-    async def findNumber(cls, selectField, where=None, args=None):
-        sql = ['select %s _num_ from `%s`' % (selectField, cls.__table__)]
-        if where:
-            sql.append("where")
-            sql.append(where)
-        rs = await select(" ".join(sql), args, 1)
-        if len(rs) == 0:
-            return None
-        return rs[0]['_num_']
+	@classmethod
+	async def findNumber(cls, selectField, where=None, args=None):
+		sql = ['select %s _num_ from `%s`' % (selectField, cls.__table__)]
+		if where:
+			sql.append("where")
+			sql.append(where)
+		rs = await select(" ".join(sql), args, 1)
+		if len(rs) == 0:
+			return None
+		return rs[0]['_num_']
 
     # ===============往Model类添加实例方法，就可以让所有子类调用实例方法===================
 
     # save、update、remove这三个方法需要管理员权限才能操作，所以不定义为类方法，需要创建实例之后才能调用
-    async def save(self):
-        args = list(map(self.getValueOrDefault, self.__fields__))  # 将除主键外的属性名添加到args这个列表中
-        args.append(self.getValueOrDefault(self.__primary_key__))  # 再把主键添加到这个列表的最后
-        rows = await execute(self.__insert__, args)
-        if rows != 1:  # 插入纪录受影响的行数应该为1，如果不是1 那就错了
-            logging.warn("无法插入纪录，受影响的行：%s" % rows)
+	async def save(self):
+		args = list(map(self.getValueOrDefault, self.__fields__))  # 将除主键外的属性名添加到args这个列表中
+		args.append(self.getValueOrDefault(self.__primary_key__))  # 再把主键添加到这个列表的最后
+		rows = await execute(self.__insert__, args)
+		if rows != 1:  # 插入纪录受影响的行数应该为1，如果不是1 那就错了
+			logging.warn("无法插入纪录，受影响的行：%s" % rows)
 
-    async def update(self):
-        args = list(map(self.getValue, self.__fields__))
-        args.append(self.getValue(self.__primary_key__))
-        rows = await execute(self.__update__, args)
-        if rows != 1:
-            logging.warn('failed to update by primary key: affected rows: %s' % rows)
+	async def update(self):
+		args = list(map(self.getValue, self.__fields__))
+		args.append(self.getValue(self.__primary_key__))
+		rows = await execute(self.__update__, args)
+		if rows != 1:
+			logging.warn('failed to update by primary key: affected rows: %s' % rows)
 
-    async def remove(self):
-        args = [self.getValue(self.__primary_key__)]
-        rows = await execute(self.__delete__, args)
-        if rows != 1:
-            logging.warn('failed to remove by primary key: affected rows: %s' % rows)
+	async def remove(self):
+		args = [self.getValue(self.__primary_key__)]
+		rows = await execute(self.__delete__, args)
+		if rows != 1:
+			logging.warn('failed to remove by primary key: affected rows: %s' % rows)
 
 
 
